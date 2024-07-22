@@ -22,7 +22,6 @@ public:
     void deleteNode(K);                // 删除节点
     void dumpFile();                   // 持久化数据到文件
     void loadFile();                   // 从文件加载数据
-    void clear(Node<K, V> *);          // 递归删除节点
     int size(){return _nodecount;}     // 跳表中的节点个数
 private:
     int _maxlevel;              // 跳表允许的最大层数
@@ -46,12 +45,19 @@ SkipList<K, V>::SkipList(int maxlevel) {
 
 template <typename K, typename V>
 SkipList<K, V>::~SkipList() {
+    if(_filewriter.is_open()){
+        _filewriter.close();
+    }
+    if(_filereader.is_open()){
+        _filereader.close();
+    }
     Node<K, V>* temp = _header;
     while(temp){
         _header = _header->forward[0];
         delete temp;
         temp = _header;
     }
+    _header = nullptr;
 }
 
 // 获取节点的随机层级
