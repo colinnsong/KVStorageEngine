@@ -1,9 +1,12 @@
 #ifndef SKIPLIST_H
 #define SKIPLIST_H
 
+#define STORE_FILE "../store/dumpfile"
 #include "node.hpp"
 #include <fstream>
 #include <iostream>
+#include <string>
+#include <mutex>
 using namespace std;
 
 template <typename K, typename V>
@@ -13,14 +16,14 @@ public:
     ~SkipList();                       // 析构函数
     int getRandomLevel();              // 获取节点的随机层级
     Node<K, V> *createNode(K, V, int); // 节点创建
-    bool insertNode(K, V);           // 插入节点
+    bool insertNode(K, V);             // 插入节点
     void displayList();                // 展示节点
-    bool searchNode(K);             // 搜索节点
-    void deleteNode(K);             // 删除节点
+    bool searchNode(K);                // 搜索节点
+    void deleteNode(K);                // 删除节点
     void dumpFile();                   // 持久化数据到文件
     void loadFile();                   // 从文件加载数据
     void clear(Node<K, V> *);          // 递归删除节点
-    int size();                        // 跳表中的节点个数
+    int size(){return _nodecount;}     // 跳表中的节点个数
 private:
     int _maxlevel;              // 跳表允许的最大层数
     int _curlevel;              // 跳表当前的最大层序号[0, _maxlevel-1]
@@ -28,6 +31,9 @@ private:
     int _nodecount;             // 跳表中组织的所有节点的数量
     std::ofstream _filewriter;  // 文件写入器
     std::ifstream _filereader;  // 文件读取器
+    std::mutex mtx;
+    bool isvalidString(const string& str);
+    void getfromString(const string& str, string* key, string* value);
 };
 
 template <typename K, typename V>
@@ -35,7 +41,7 @@ SkipList<K, V>::SkipList(int maxlevel) {
     _maxlevel = maxlevel;
     _curlevel = 0;
     _nodecount = 0;
-    _header = new Node<K, V>(0, 0, _maxlevel);
+    _header = new Node<K, V>("", "", _maxlevel);
 }
 
 template <typename K, typename V>
@@ -89,6 +95,7 @@ bool SkipList<K, V>::searchNode(K key){
 // 插入节点
 template <typename K, typename V>
 bool SkipList<K, V>::insertNode(K key, V value){
+    mtx.lock();
     Node<K, V>* cur = _header;
     // 记录每层插入位置的前驱节点
     Node<K, V>* update[_maxlevel];
@@ -104,6 +111,7 @@ bool SkipList<K, V>::insertNode(K key, V value){
     // 检查是否已经存在该节点
     cur = cur->forward[0];
     if (cur && cur->getKey() == key) {
+        mtx.unlock();
         return false;
     }
     else{
@@ -125,12 +133,14 @@ bool SkipList<K, V>::insertNode(K key, V value){
         }
         _nodecount++;
     }
+    mtx.unlock();
     return true;
 }
 
 // 删除节点
 template <typename K, typename V>
 void SkipList<K, V>::deleteNode(K key) {
+    mtx.lock();
     Node<K, V>* cur = _header;
     // 记录每层删除位置的前驱节点
     Node<K, V>* update[_maxlevel];
@@ -147,6 +157,7 @@ void SkipList<K, V>::deleteNode(K key) {
     cur = cur->forward[0];
     if (!cur || cur->getKey() != key) {
         cout << "No such key in skiplist" << endl;
+        mtx.unlock();
         return;
     }
     else{
@@ -163,6 +174,7 @@ void SkipList<K, V>::deleteNode(K key) {
         delete cur;
         _nodecount--;
     }
+    mtx.unlock();
 }
 
 // 遍历节点
@@ -177,6 +189,52 @@ void SkipList<K, V>::displayList() {
         }
         cout << endl;
     }
+}
+
+// 数据持久化
+template <typename K, typename V>
+void SkipList<K, V>::dumpFile() {
+    _filewriter.open(STORE_FILE); // 打开文件
+    Node<K, V>* node = this->_header->forward[0]; // 从头节点开始遍历
+    while (node != nullptr) {
+        _filewriter << node->getKey() << ":" << node->getValue() << "\n"; // 写入键值对
+        node = node->forward[0]; // 移动到下一个节点
+    }
+    _filewriter.flush(); // 刷新缓冲区，确保数据完全写入
+    _filewriter.close(); // 关闭文件
+}
+
+// 判断字符串的合法性
+template <typename K, typename V>
+bool SkipList<K, V>::isvalidString(const string& str) {
+    return !str.empty() && str.find(":") != string::npos;
+}
+
+// 从字符串中提取键值对
+template <typename K, typename V>
+void SkipList<K, V>::getfromString(const string& str, string* key, string* value){
+    if (!isvalidString(str)) {
+        return;
+    }
+    *key = str.substr(0, str.find(":"));
+    *value = str.substr(str.find(":") + 1, str.length());
+}
+
+// 从磁盘加载数据
+template <typename K, typename V>
+void SkipList<K, V>::loadFile(){
+    _filereader.open(STORE_FILE);
+    string line = "";
+    string key = "";
+    string value = "";
+    while(getline(_filereader, line)){
+        getfromString(line, &key, &value);
+        if(!key.empty() && !value.empty()){
+            // this->insertNode(stoi(key), stoi(value));
+            this->insertNode(key, value);
+        }
+    }
+    _filereader.close();
 }
 
 #endif
